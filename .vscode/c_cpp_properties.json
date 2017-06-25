@@ -1,0 +1,20 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "G:\\Programme\\Arduino\\hardware\\arduino\\avr\\cores\\arduino",
+                "G:\\Programme\\Arduino\\hardware\\arduino\\avr\\variants\\micro",
+                "G:\\Programme\\Arduino\\hardware\\tools\\avr\\avr\\include"
+            ],
+            "browse": {
+                "limitSymbolsToIncludedHeaders": false,
+                "path": [
+                    "G:\\Programme\\Arduino\\hardware\\arduino\\avr\\cores\\arduino",
+                    "G:\\Programme\\Arduino\\hardware\\arduino\\avr\\variants\\micro",
+                    "G:\\Programme\\Arduino\\hardware\\tools\\avr\\avr\\include"
+                ]
+            }
+        }
+    ]
+}
