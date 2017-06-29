@@ -1,5 +1,13 @@
+//#define TESTING
+#define DEBUG
 
 bool int_switch_closed;
+
+void delayCycles(uint16_t cycles){
+  for(volatile uint16_t i = 0; i < cycles; i++){
+    _NOP();
+  }
+}
 
 struct pin_pair{
   pin_pair(iris_pin pin0, iris_pin pin1) :
@@ -28,7 +36,7 @@ struct pin_pair{
 
     if (flowFrom0to1()){
       digitalWrite(pin0, value);
-      digitalWrite(pin1, LOW); 
+      digitalWrite(pin1, LOW);
     } else {
       #ifdef DEBUG
         //Make sure there's no error in the logic of updateStatus()
@@ -45,26 +53,44 @@ struct pin_pair{
 
   void updateStatus(){
     //Update current flow from pin0 to pin1
-    pinMode(pin0, iris_pin_mode::input);
+    //Analog read is necessary if there are series resistors
+    //change this to bypass the series resistors when reading
+    pinMode(pin0, iris_pin_mode::input_pullup);
     pinMode(pin1, iris_pin_mode::output);
 
     digitalWrite(pin1, LOW);
-    bool low0_if_low1 = digitalRead(pin0) == LOW;
+    int start = micros();
+    bool low0_if_low1 = analogRead(pin0) < 500;
+    int end = micros();
+    SerialUSB.print("Measure-time (us): "); //~112 with analog, ~4 with digital
+    SerialUSB.print(end - start, DEC);
+    SerialUSB.print(" pin0: ");
+    SerialUSB.print(analogRead(pin0), DEC);
+    SerialUSB.print(" ");
 
     digitalWrite(pin1, HIGH);
-    bool low0_if_high1 = digitalRead(pin0) == LOW;
+    bool low0_if_high1 = analogRead(pin0) < 500;
+    SerialUSB.print("pin0: ");
+    SerialUSB.print(analogRead(pin0), DEC);
+    SerialUSB.print(" ");
 
     m_flow_from_0_to_1 = low0_if_low1 && !low0_if_high1;
 
     //Update current flow from pin1 to pin0
-    pinMode(pin1, iris_pin_mode::input);
+    pinMode(pin1, iris_pin_mode::input_pullup);
     pinMode(pin0, iris_pin_mode::output);
 
     digitalWrite(pin0, LOW);
-    bool low1_if_low0 = digitalRead(pin1) == LOW;
+    bool low1_if_low0 = analogRead(pin1) < 500;
+    SerialUSB.print("pin1: ");
+    SerialUSB.print(analogRead(pin1), DEC);
+    SerialUSB.print(" ");
 
     digitalWrite(pin0, HIGH);
-    bool low1_if_high0 = digitalRead(pin1) == LOW;
+    bool low1_if_high0 = analogRead(pin1) < 500;
+    SerialUSB.print("pin1: ");
+    SerialUSB.print(analogRead(pin1), DEC);
+    SerialUSB.print(" ");
 
     m_flow_from_1_to_0 = low1_if_low0 && !low1_if_high0;
 
@@ -72,6 +98,13 @@ struct pin_pair{
     pinMode(pin0, iris_pin_mode::input_pullup);
     pinMode(pin1, iris_pin_mode::input_pullup);
     m_ext_led_active = digitalRead(pin0) != digitalRead(pin1);
+    SerialUSB.print("pin0: ");
+    SerialUSB.print(analogRead(pin0), DEC);
+    SerialUSB.print(" ");
+
+    SerialUSB.print("pin1: ");
+    SerialUSB.print(analogRead(pin1), DEC);
+    SerialUSB.print("\n");
 
     //If current flows in both directions, a switch must be connected and closed
     m_switch_closed = flowFrom0to1() && flowFrom1to0(); 
@@ -120,15 +153,15 @@ pin_pair P5P6 = pin_pair(P5, P6);
 void setup() {
   SerialUSB.begin(9600);
 
-  is_P2_unused = true;
+  is_P2_unused = false;
 
-#if 1
+#ifndef TESTING
   
 #else
   //Test library
   pinMode(P0, iris_pin_mode::input_pullup);
 
-#if 0
+#if 1
   pinMode(P1, iris_pin_mode::input_pullup);
 #else
   pinMode(P1, iris_pin_mode::output);
@@ -146,7 +179,10 @@ void setup() {
 void loop() {
 
   char output[200];
- 
+  
+  SerialUSB.write("====================================\n");
+
+#ifndef TESTING
   if(is_P2_unused){
     pinMode(P2, iris_pin_mode::input_pullup);
     P0P1.updateStatus();
@@ -156,7 +192,7 @@ void loop() {
   }
   else{
     pinMode(P0, iris_pin_mode::input_pullup);
-    int_switch_closed = (bool)digitalRead(P0);
+    int_switch_closed = digitalRead(P0) == LOW;
     P1P2.updateStatus();
     if (P1P2.ledConnected()){
       P1P2.writeLed(HIGH);
@@ -175,7 +211,6 @@ void loop() {
 
 
 
-  SerialUSB.write("====================================\n");
 
   sprintf(output, 
     "int_switch_closed: %i, is_P2_unused: %i\n",
@@ -226,18 +261,19 @@ void loop() {
   );
   SerialUSB.write(output);
 
-
-  // sprintf(output,
-  //   "P0: %i %i, P1: %i %i, P2: %i %i, P3: %i %i, P4: %i %i, P5: %i %i, P6: %i %i\n",
-  //   digitalRead(P0), analogRead(P0),
-  //   digitalRead(P1), analogRead(P1),
-  //   digitalRead(P2), analogRead(P2),
-  //   digitalRead(P3), analogRead(P3),
-  //   digitalRead(P4), analogRead(P4),
-  //   digitalRead(P5), analogRead(P5),
-  //   digitalRead(P6), analogRead(P6)
-  // );
-  // SerialUSB.write(output);
+#else
+  sprintf(output,
+    "P0: %i %i, P1: %i %i, P2: %i %i, P3: %i %i, P4: %i %i, P5: %i %i, P6: %i %i\n",
+    digitalRead(P0), analogRead(P0),
+    digitalRead(P1), analogRead(P1),
+    digitalRead(P2), analogRead(P2),
+    digitalRead(P3), analogRead(P3),
+    digitalRead(P4), analogRead(P4),
+    digitalRead(P5), analogRead(P5),
+    digitalRead(P6), analogRead(P6)
+  );
+  SerialUSB.write(output);
+#endif
 
   delay(500);
 }

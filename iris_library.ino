@@ -1,5 +1,3 @@
-#define DEBUG
-
 #define PB 2
 #define PC 3
 #define PD 4
@@ -277,6 +275,16 @@ void pinMode(iris_pin pin, iris_pin_mode mode){
       //All JTAG pins are on index 1
       break;
     }
+
+    //Disconnect secondary pins to get more accurate analog readouts
+    //and higher current on output
+    //TODO: This needs to be implemented per mode, not globally
+    suspendInterrupts();
+    *modeRegisters[1] &= ~bitMasks[1];
+    *outputRegisters[1] &= ~bitMasks[1];
+    resumeInterrupts();
+    //---END TODO
+
   }
   #ifdef DEBUG
   //TODO: Send Error message via serial
