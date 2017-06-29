@@ -14,7 +14,8 @@
                     "G:\\Programme\\Arduino\\hardware\\arduino\\avr\\variants\\micro",
                     "G:\\Programme\\Arduino\\hardware\\tools\\avr\\avr\\include"
                 ]
-            }
+            },
+            "intelliSenseMode": "msvc-x64"
         }
     ]
 }

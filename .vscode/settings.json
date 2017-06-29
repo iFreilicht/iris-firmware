@@ -3,5 +3,11 @@
     "[cpp]": {
         "editor.quickSuggestions": true,
         "editor.tabSize": 2
+    },
+    "files.associations": {
+        "wiring_digital.c": "cpp",
+        "wiring.c": "cpp",
+        "hooks.c": "cpp",
+        "wiring_analog.c": "cpp"
     }
 }
