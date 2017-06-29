@@ -17,7 +17,7 @@ struct pin_pair{
     this->updateStatus();
   }
 
-  const iris_pin pin0;
+  const iris_pin pin0; //has to support iris_pin_mode::output_220R
   const iris_pin pin1;
 
   //check whether led is connected that can be powered
@@ -31,7 +31,7 @@ struct pin_pair{
   void writeLed(uint8_t value){
     if (!ledConnected()) return;
 
-    pinMode(pin0, iris_pin_mode::output);
+    pinMode(pin0, iris_pin_mode::output_220R);
     pinMode(pin1, iris_pin_mode::output);
 
     if (flowFrom0to1()){
@@ -52,27 +52,35 @@ struct pin_pair{
   }
 
   void updateStatus(){
+    static const uint16_t led_threshold = 700;
     //Update current flow from pin0 to pin1
-    //Analog read is necessary if there are series resistors
-    //change this to bypass the series resistors when reading
+    //Analog read is necessary to detect LEDs, some have a very high voltage drop
     pinMode(pin0, iris_pin_mode::input_pullup);
     pinMode(pin1, iris_pin_mode::output);
 
     digitalWrite(pin1, LOW);
     int start = micros();
-    bool low0_if_low1 = analogRead(pin0) < 500;
+    bool low0_if_low1 = analogRead(pin0) < led_threshold;
     int end = micros();
-    SerialUSB.print("Measure-time (us): "); //~112 with analog, ~4 with digital
-    SerialUSB.print(end - start, DEC);
-    SerialUSB.print(" pin0: ");
-    SerialUSB.print(analogRead(pin0), DEC);
-    SerialUSB.print(" ");
+    #ifdef DEBUG
+      SerialUSB.print("Measure-time (us): "); //~112 with analog, ~4 with digital
+      SerialUSB.print(end - start, DEC);
+      SerialUSB.print(" pin0: ");
+      SerialUSB.print(digitalRead(pin0), DEC);
+      SerialUSB.print(" ");
+      SerialUSB.print(analogRead(pin0), DEC);
+      SerialUSB.print(" ");
+    #endif
 
     digitalWrite(pin1, HIGH);
-    bool low0_if_high1 = analogRead(pin0) < 500;
-    SerialUSB.print("pin0: ");
-    SerialUSB.print(analogRead(pin0), DEC);
-    SerialUSB.print(" ");
+    bool low0_if_high1 = analogRead(pin0) < led_threshold;
+    #ifdef DEBUG
+      SerialUSB.print("pin0: ");
+      SerialUSB.print(digitalRead(pin0), DEC);
+      SerialUSB.print(" ");
+      SerialUSB.print(analogRead(pin0), DEC);
+      SerialUSB.print(" ");
+    #endif
 
     m_flow_from_0_to_1 = low0_if_low1 && !low0_if_high1;
 
@@ -81,16 +89,24 @@ struct pin_pair{
     pinMode(pin0, iris_pin_mode::output);
 
     digitalWrite(pin0, LOW);
-    bool low1_if_low0 = analogRead(pin1) < 500;
-    SerialUSB.print("pin1: ");
-    SerialUSB.print(analogRead(pin1), DEC);
-    SerialUSB.print(" ");
+    bool low1_if_low0 = analogRead(pin1) < led_threshold;
+    #ifdef DEBUG
+      SerialUSB.print("pin1: ");
+      SerialUSB.print(digitalRead(pin1), DEC);
+      SerialUSB.print(" ");
+      SerialUSB.print(analogRead(pin1), DEC);
+      SerialUSB.print(" ");
+    #endif
 
     digitalWrite(pin0, HIGH);
-    bool low1_if_high0 = analogRead(pin1) < 500;
-    SerialUSB.print("pin1: ");
-    SerialUSB.print(analogRead(pin1), DEC);
-    SerialUSB.print(" ");
+    bool low1_if_high0 = analogRead(pin1) < led_threshold;
+    #ifdef DEBUG
+      SerialUSB.print("pin1: ");
+      SerialUSB.print(digitalRead(pin1), DEC);
+      SerialUSB.print(" ");
+      SerialUSB.print(analogRead(pin1), DEC);
+      SerialUSB.print(" ");
+    #endif
 
     m_flow_from_1_to_0 = low1_if_low0 && !low1_if_high0;
 
@@ -98,13 +114,19 @@ struct pin_pair{
     pinMode(pin0, iris_pin_mode::input_pullup);
     pinMode(pin1, iris_pin_mode::input_pullup);
     m_ext_led_active = digitalRead(pin0) != digitalRead(pin1);
-    SerialUSB.print("pin0: ");
-    SerialUSB.print(analogRead(pin0), DEC);
-    SerialUSB.print(" ");
+    #ifdef DEBUG
+      SerialUSB.print("pin0: ");
+      SerialUSB.print(digitalRead(pin0), DEC);
+      SerialUSB.print(" ");
+      SerialUSB.print(analogRead(pin0), DEC);
+      SerialUSB.print(" ");
 
-    SerialUSB.print("pin1: ");
-    SerialUSB.print(analogRead(pin1), DEC);
-    SerialUSB.print("\n");
+      SerialUSB.print("pin1: ");
+      SerialUSB.print(digitalRead(pin1), DEC);
+      SerialUSB.print(" ");
+      SerialUSB.print(analogRead(pin1), DEC);
+      SerialUSB.print("\n");
+    #endif
 
     //If current flows in both directions, a switch must be connected and closed
     m_switch_closed = flowFrom0to1() && flowFrom1to0(); 
@@ -145,7 +167,7 @@ struct pin_pair{
 //In which case P1 and P2 form a pair of GPIO pins that either power an LED
 //and read out an external switch
 bool is_P2_unused;
-pin_pair P0P1 = pin_pair(P0, P1);
+pin_pair P0P1 = pin_pair(P1, P0);
 pin_pair P1P2 = pin_pair(P1, P2);
 pin_pair P3P4 = pin_pair(P3, P4);
 pin_pair P5P6 = pin_pair(P5, P6);
@@ -179,12 +201,10 @@ void setup() {
 void loop() {
 
   char output[200];
-  
-  SerialUSB.write("====================================\n");
 
 #ifndef TESTING
   if(is_P2_unused){
-    pinMode(P2, iris_pin_mode::input_pullup);
+    pinMode(P2, iris_pin_mode::input);
     P0P1.updateStatus();
     if (P0P1.ledConnected()){
       P0P1.writeLed(HIGH);
@@ -209,9 +229,9 @@ void loop() {
     P5P6.writeLed(HIGH);
   }
 
-
-
-
+#ifdef DEBUG
+  SerialUSB.write("====================================\n");
+  
   sprintf(output, 
     "int_switch_closed: %i, is_P2_unused: %i\n",
     int_switch_closed,
@@ -260,8 +280,8 @@ void loop() {
      P5P6.flowFrom1to0()
   );
   SerialUSB.write(output);
-
-#else
+#endif
+#else //ifdef TESTING
   sprintf(output,
     "P0: %i %i, P1: %i %i, P2: %i %i, P3: %i %i, P4: %i %i, P5: %i %i, P6: %i %i\n",
     digitalRead(P0), analogRead(P0),

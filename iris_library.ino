@@ -8,6 +8,7 @@ enum class iris_pin_mode : uint8_t{
   input = INPUT,
   output = OUTPUT,
   input_pullup = INPUT_PULLUP,
+  output_220R,
   serial_spi,
   serial_uart,
   jtag
@@ -40,12 +41,26 @@ const uint8_t PROGMEM iris_pin_mode_availability_PGM[] = {
   [iris_pin_mode::input]         = 0b01111111,
   [iris_pin_mode::output]        = 0b01111111,
   [iris_pin_mode::input_pullup]  = 0b01111111,
+  [iris_pin_mode::output_220R]   = 0b00101010,
   [iris_pin_mode::serial_spi]    = 0b01111000,
   [iris_pin_mode::serial_uart]   = 0b00001110,
   [iris_pin_mode::jtag]          = 0b01111000
 };
 
 #define MAX_PINS_PER_IRIS_PIN 3
+
+//store which pins are to be used for input/output for each iris_pin
+//This might not be a perfect solution, (parallel pin configurations won't work)
+//but it works for now
+uint8_t current_pin_index[] = {
+  [iris_pin::P0] = 0,
+  [iris_pin::P1] = 0,
+  [iris_pin::P2] = 0,
+  [iris_pin::P3] = 0,
+  [iris_pin::P4] = 0,
+  [iris_pin::P5] = 0,
+  [iris_pin::P6] = 0
+};
 
 //a safe memory location that can be written over with garbage
 //think of it like piping to /dev/null
@@ -56,6 +71,8 @@ static volatile uint8_t _safe_value;
 //First entry is the default pin to use for input readouts
 //  it is always an analog pin, except for P0
 //Second entry is a digital pin with support for interrupts or NOT_A_PIN
+//If the iris_pin supports turning on a series resistor,
+//  the corresponding pin is the second entry
 //If fhe iris_pin supports JTAG, the corresponding pin is the first entry
 //If the iris_pin supports SPI or UART, the corresponding pin is the second entry, 
 //  except for P3s secondary CTS which is the third entry
@@ -160,6 +177,20 @@ enum class led_pin : uint8_t{
   N6  //PD6, PD7           | 12, 6
 };
 
+inline uint8_t setActivePinIndex(iris_pin pin){
+  return current_pin_index[(uint8_t)pin];
+}
+
+void setActivePinIndex(iris_pin pin, uint8_t index){
+  if (index >= MAX_PINS_PER_IRIS_PIN){
+    #ifdef DEBUG
+    //TODO: Send Error message via serial
+    #endif
+    return;
+  }
+  current_pin_index[(uint8_t)pin] = index;
+}
+
 //Get bitmask for one internal pin
 inline uint8_t pinToBitMask(iris_pin pin, uint8_t index){
   return pgm_read_byte(
@@ -214,88 +245,88 @@ inline bool pinCanBeMode(iris_pin pin, iris_pin_mode mode){
 
 //Change mode of pin
 void pinMode(iris_pin pin, iris_pin_mode mode){
-  if( pinCanBeMode(pin, mode) ){
-    //Setup temporary storage for all bitMasks and addresses required to change mode
-    uint8_t bitMasks[MAX_PINS_PER_IRIS_PIN];
-    uint8_t ports[MAX_PINS_PER_IRIS_PIN];
-    volatile uint8_t* modeRegisters[MAX_PINS_PER_IRIS_PIN];
-    volatile uint8_t* outputRegisters[MAX_PINS_PER_IRIS_PIN];
-
-    //Populate storage
-    for(int i = 0; i < MAX_PINS_PER_IRIS_PIN; ++i){
-      bitMasks[i]         = pinToBitMask(pin, i);         //Bitmask to write to data register
-      ports[i]            = pinToPort(pin, i);            //General Port index
-      modeRegisters[i]    = portToModeRegister(ports[i]);   //DDRx  - Data Direction Register
-      outputRegisters[i]  = portToOutputRegister(ports[i]); //PORTx - Data Register
-    }
-
-    switch( mode ){
-      default:
-      case iris_pin_mode::input:
-        //All connected pins are set as inputs
-        for(int i = 0; i < MAX_PINS_PER_IRIS_PIN; ++i){
-          suspendInterrupts();
-          *modeRegisters[i] &= ~bitMasks[i];
-          *outputRegisters[i] &= ~bitMasks[i];
-          resumeInterrupts();
-        }
-      break;
-
-      case iris_pin_mode::input_pullup:
-        //All connected pins are set as inputs
-        //and all pull-ups are activated
-        //Maybe it would be better to only turn on a single pull-up?
-        for(int i = 0; i < MAX_PINS_PER_IRIS_PIN; ++i){
-          suspendInterrupts();
-          *modeRegisters[i] &= ~bitMasks[i];
-          *outputRegisters[i] |= bitMasks[i];
-          resumeInterrupts();
-        }
-      break;
-
-      case iris_pin_mode::output:
-        //All connected pins are set as outputs
-        //This maximises sink and source current
-        for(int i = 0; i < MAX_PINS_PER_IRIS_PIN; ++i){
-          suspendInterrupts();
-          *modeRegisters[i] |= bitMasks[i];
-          resumeInterrupts();
-        }
-      break;
-
-      case iris_pin_mode::serial_spi:
-      //All SPI pins are on index 0
-      break;
-
-      case iris_pin_mode::serial_uart:
-      //RX and TX are on index 0, ~CTS is on index 2
-      break;
-
-      case iris_pin_mode::jtag:
-      //All JTAG pins are on index 1
-      break;
-    }
-
-    //Disconnect secondary pins to get more accurate analog readouts
-    //and higher current on output
-    //TODO: This needs to be implemented per mode, not globally
-    suspendInterrupts();
-    *modeRegisters[1] &= ~bitMasks[1];
-    *outputRegisters[1] &= ~bitMasks[1];
-    resumeInterrupts();
-    //---END TODO
-
+  //Don't change pin mode if it isn't supported by the pin
+  if( !pinCanBeMode(pin, mode) ){
+    #ifdef DEBUG
+    //TODO: Send Error message via serial
+    #endif
+    return;
   }
-  #ifdef DEBUG
-  //TODO: Send Error message via serial
-  #endif
+
+  //Setup temporary storage for all bitMasks and addresses required to change mode
+  uint8_t bitMasks[MAX_PINS_PER_IRIS_PIN];
+  uint8_t ports[MAX_PINS_PER_IRIS_PIN];
+  volatile uint8_t* modeRegisters[MAX_PINS_PER_IRIS_PIN];
+  volatile uint8_t* outputRegisters[MAX_PINS_PER_IRIS_PIN];
+
+  //Populate storage
+  for(int i = 0; i < MAX_PINS_PER_IRIS_PIN; ++i){
+    bitMasks[i]         = pinToBitMask(pin, i);         //Bitmask to write to data register
+    ports[i]            = pinToPort(pin, i);            //General Port index
+    modeRegisters[i]    = portToModeRegister(ports[i]);   //DDRx  - Data Direction Register
+    outputRegisters[i]  = portToOutputRegister(ports[i]); //PORTx - Data Register
+  }
+
+  //Switch everything to input (pull-up deactivated) first
+  for(int i = 0; i < MAX_PINS_PER_IRIS_PIN; ++i){
+    suspendInterrupts();
+    *modeRegisters[i] &= ~bitMasks[i];
+    *outputRegisters[i] &= ~bitMasks[i];
+    resumeInterrupts();
+  }
+
+  switch( mode ){
+    default:
+    case iris_pin_mode::input:
+      //All connected pins are already set as inputs.
+      setActivePinIndex(pin, 0);
+    break;
+
+    case iris_pin_mode::input_pullup:
+      //Turn on pull-up on first pin.
+      setActivePinIndex(pin, 0);
+      suspendInterrupts();
+      *outputRegisters[0] |= bitMasks[0];
+      resumeInterrupts();
+    break;
+
+    case iris_pin_mode::output:
+      //Switch first pin to output.
+      //TODO: Make secondary pins output as well, this requires modification of digitalWrite()
+      //Maybe that should be a new pin_mode?
+      setActivePinIndex(pin, 0);
+      suspendInterrupts();
+      *modeRegisters[0] |= bitMasks[0];
+      resumeInterrupts();
+    break;
+
+    case iris_pin_mode::output_220R:
+      //Switch second pin to output.
+      setActivePinIndex(pin, 1);
+      suspendInterrupts();
+      *modeRegisters[1] |= bitMasks[1];
+      resumeInterrupts();
+    break;
+
+    case iris_pin_mode::serial_spi:
+    //All SPI pins are on index 0
+    break;
+
+    case iris_pin_mode::serial_uart:
+    //RX and TX are on index 0, ~CTS is on index 2
+    break;
+
+    case iris_pin_mode::jtag:
+    //All JTAG pins are on index 1
+    break;
+  }
 }
 
 //Read digital value from pin
 int digitalRead(iris_pin pin){
   //First internal pin is the standard, see comment above iris_pin_to_bitmasks_PGM
-  uint8_t bitMask = pinToBitMask(pin, 0);
-  uint8_t port = pinToPort(pin, 0);
+  uint8_t bitMask = pinToBitMask(pin, setActivePinIndex(pin));
+  uint8_t port = pinToPort(pin, setActivePinIndex(pin));
 
   //Original Arduino implementation check for timers here.
   //As none of the external iris 16 pins are timer-capable, we leave this out.
@@ -309,8 +340,8 @@ int digitalRead(iris_pin pin){
 //If you want to (de)activate the internal pull-ups, use pinMode
 void digitalWrite(iris_pin pin, uint8_t value){
   //First internal pin is the standard, see comment above iris_pin_to_bitmasks_PGM
-  uint8_t bitMask = pinToBitMask(pin, 0);
-  uint8_t port = pinToPort(pin, 0);
+  uint8_t bitMask = pinToBitMask(pin, setActivePinIndex(pin));
+  uint8_t port = pinToPort(pin, setActivePinIndex(pin));
   volatile uint8_t* outputRegister = portToOutputRegister(port);
 
   //Original Arduino implementation check for timers here.
